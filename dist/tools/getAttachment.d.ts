@@ -27,3 +27,4 @@ export declare function getAttachmentHandler(jira: Version3Client, args: {
     attachmentId?: string;
     saveTo?: string;
 }): Promise<McpResponse>;
+export declare function formatFileSize(bytes: number): string;

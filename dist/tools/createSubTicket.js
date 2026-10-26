@@ -1,8 +1,9 @@
-import { buildADFWithReport, resolveContent, respond, FILE_PATH_HINT } from "../utils.js";
+import { buildADFWithReport, resolveContent, respond, fail, FILE_PATH_HINT, EMBED_HINT } from "../utils.js";
 import { summarizeSmartLinks } from "../shared/smartLinks.js";
+import { planEmbeds, embedBaseDir, formatEmbedLines, writeDeferredDescription } from "../shared/embedAttachments.js";
 export const createSubTicketDefinition = {
     name: "create-sub-ticket",
-    description: "Create a sub-ticket (child issue) for a parent ticket. The description can be given inline via `description` or read from a local file via `filePath`.",
+    description: "Create a sub-ticket (child issue) for a parent ticket. The description can be given inline via `description` or read from a local file via `filePath`. " + EMBED_HINT,
     inputSchema: {
         type: "object",
         properties: {
@@ -31,6 +32,14 @@ export const createSubTicketDefinition = {
 };
 export async function createSubTicketCore(jira, args) {
     const { parentKey, summary, description = "", descriptionFormat = "plain", issueType = "Sub-task", descriptionSource } = args;
+    const built = description ? buildADFWithReport(description, descriptionFormat) : null;
+    const descriptionAdf = built?.adf ?? null;
+    const planned = descriptionAdf
+        ? await planEmbeds(jira, undefined, descriptionAdf, args.embedBaseDir ?? embedBaseDir(undefined))
+        : null;
+    if (planned && "error" in planned)
+        return fail(planned.error);
+    const deferDescription = !!planned && planned.plan.refs.length > 0;
     try {
         const parentIssue = await jira.issues.getIssue({
             issueIdOrKey: parentKey,
@@ -48,19 +57,25 @@ export async function createSubTicketCore(jira, args) {
         const finalIssueType = availableIssueTypes.includes(issueType)
             ? issueType
             : availableIssueTypes[0] || "Sub-task";
-        const built = description ? buildADFWithReport(description, descriptionFormat) : null;
         const createIssuePayload = {
             fields: {
                 summary,
                 parent: { key: parentKey },
                 project: { id: parentIssue.fields.project.id },
                 issuetype: { name: finalIssueType },
-                ...(built ? { description: built.adf } : {}),
+                ...(descriptionAdf && !deferDescription ? { description: descriptionAdf } : {}),
             },
         };
         const created = await jira.issues.createIssue(createIssuePayload);
         const { key, self } = created;
         const urlText = self ? `\nURL: ${self.replace(/\/rest\/api\/3\/issue\/\w+$/, `/browse/${key}`)}` : "";
+        let embedText = "";
+        if (deferDescription) {
+            const written = await writeDeferredDescription(jira, key, descriptionAdf, planned.plan);
+            if ("error" in written)
+                return fail(written.error);
+            embedText = formatEmbedLines(written.lines);
+        }
         const sourceText = descriptionSource
             ? `\nDescription from ${descriptionSource} (format: ${descriptionFormat}, ${description.length} characters)`
             : "";
@@ -68,7 +83,7 @@ export async function createSubTicketCore(jira, args) {
             content: [
                 {
                     type: "text",
-                    text: `Created ${key} under ${parentKey}${urlText}${sourceText}${summarizeSmartLinks(built?.smartLinks ?? null)}`,
+                    text: `Created ${key} under ${parentKey}${urlText}${sourceText}${summarizeSmartLinks(built?.smartLinks ?? null)}${embedText}`,
                 },
             ],
             _meta: {},
@@ -101,5 +116,6 @@ export async function createSubTicketHandler(jira, args) {
         description: content.text,
         descriptionFormat: content.format,
         descriptionSource: content.source || undefined,
+        embedBaseDir: embedBaseDir(filePath),
     });
 }

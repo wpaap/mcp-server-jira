@@ -23,8 +23,10 @@ import { unlinkIssuesDefinition, unlinkIssuesHandler } from "./tools/unlinkIssue
 import { updateCommentDefinition, updateCommentHandler } from "./tools/updateComment.js";
 import { deleteCommentDefinition, deleteCommentHandler } from "./tools/deleteComment.js";
 import { getAttachmentDefinition, getAttachmentHandler } from "./tools/getAttachment.js";
+import { addAttachmentDefinition, addAttachmentHandler } from "./tools/addAttachment.js";
 import { exportContentDefinition, exportContentHandler } from "./tools/exportContent.js";
 import { addSmartLinksDefinition, addSmartLinksHandler } from "./tools/addSmartLinks.js";
+import { notificationsDefinition, notificationsHandler, type NotificationsArgs } from "./tools/notifications.js";
 import { startUpdateCheck, consumeUpdateNotice, updateNoticeForError } from "./shared/updateCheck.js";
 import { selfUpdateDefinition, selfUpdateHandler } from "./tools/selfUpdate.js";
 import type { McpResponse } from "./utils.js";
@@ -100,8 +102,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     listJiraFiltersDefinition,
     listUsersDefinition,
     getAttachmentDefinition,
+    addAttachmentDefinition,
     exportContentDefinition,
     addSmartLinksDefinition,
+    notificationsDefinition,
     selfUpdateDefinition
   ]
 }));
@@ -213,12 +217,20 @@ async function dispatchTool(request: { params: { name: string; arguments?: unkno
       return await getAttachmentHandler(jira, args as { issueKey: string; attachmentId?: string; saveTo?: string });
     }
 
+    case "add-attachment": {
+      return await addAttachmentHandler(jira, args as { issueKey: string; filePaths: string[] });
+    }
+
     case "export-content": {
       return await exportContentHandler(jira, args as { issueKey: string; commentId?: string; filePath?: string; format?: "markdown" | "adf" });
     }
 
     case "add-smartlinks": {
       return await addSmartLinksHandler(jira, args as { issueKey: string; commentId?: string; dryRun?: boolean; projects?: string[]; prRepo?: string });
+    }
+
+    case "notifications": {
+      return await notificationsHandler(args as NotificationsArgs);
     }
 
     case "self-update": {

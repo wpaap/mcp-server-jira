@@ -23,8 +23,10 @@ import { unlinkIssuesDefinition, unlinkIssuesHandler } from "./tools/unlinkIssue
 import { updateCommentDefinition, updateCommentHandler } from "./tools/updateComment.js";
 import { deleteCommentDefinition, deleteCommentHandler } from "./tools/deleteComment.js";
 import { getAttachmentDefinition, getAttachmentHandler } from "./tools/getAttachment.js";
+import { addAttachmentDefinition, addAttachmentHandler } from "./tools/addAttachment.js";
 import { exportContentDefinition, exportContentHandler } from "./tools/exportContent.js";
 import { addSmartLinksDefinition, addSmartLinksHandler } from "./tools/addSmartLinks.js";
+import { notificationsDefinition, notificationsHandler } from "./tools/notifications.js";
 import { startUpdateCheck, consumeUpdateNotice, updateNoticeForError } from "./shared/updateCheck.js";
 import { selfUpdateDefinition, selfUpdateHandler } from "./tools/selfUpdate.js";
 // Map to store custom field information (name to ID mapping)
@@ -86,8 +88,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         listJiraFiltersDefinition,
         listUsersDefinition,
         getAttachmentDefinition,
+        addAttachmentDefinition,
         exportContentDefinition,
         addSmartLinksDefinition,
+        notificationsDefinition,
         selfUpdateDefinition
     ]
 }));
@@ -158,11 +162,17 @@ async function dispatchTool(request) {
         case "get-attachment": {
             return await getAttachmentHandler(jira, args);
         }
+        case "add-attachment": {
+            return await addAttachmentHandler(jira, args);
+        }
         case "export-content": {
             return await exportContentHandler(jira, args);
         }
         case "add-smartlinks": {
             return await addSmartLinksHandler(jira, args);
+        }
+        case "notifications": {
+            return await notificationsHandler(args);
         }
         case "self-update": {
             return await selfUpdateHandler();

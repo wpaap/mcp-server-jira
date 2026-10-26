@@ -17,9 +17,10 @@ The server provides the following tools:
    - Either `comment` (string) or `filePath` (string) — see [Editing content from a file](#editing-content-from-a-file)
    - Optional parameter: `commentFormat` — `plain` (default), `wiki`, `markdown` or `adf`
 
-4. `link-tickets`: Links two tickets with a 'relates to' relationship
-   - Required parameter: `sourceIssueKey` (string)
-   - Required parameter: `targetIssueKey` (string)
+4. `link-issues`: Links every outward issue to every inward issue, read as "outward *blocks* inward"
+   - Required parameters: `outwardIssueKeys`, `inwardIssueKeys` (string arrays) — with `linkType: "Blocks"`, the outward keys are the blockers
+   - Optional parameter: `linkType` — the type's name (`Blocks`, or `3. Blocks` on sites that number them) or its inward/outward description; defaults to `Relates`. `unlink-issues` accepts the same values.
+   - Results are reported in words, e.g. `PROJ-1 blocks PROJ-2`
 
 5. `update-description`: Updates the description of a specific ticket
    - Required parameter: `issueKey` (string)
@@ -34,6 +35,18 @@ The server provides the following tools:
    - Required parameter: `summary` (string)
    - Optional parameter: `description` (string) or `filePath` (string) — see [Editing content from a file](#editing-content-from-a-file)
    - Optional parameter: `issueType` (string) - The name of the sub-task issue type (e.g., 'Sub-task')
+
+8. `add-attachment`: Uploads local files as attachments to a ticket
+   - Required parameter: `issueKey` (string)
+   - Required parameter: `filePaths` (string array) — every path is checked before any upload, so a bad path uploads nothing
+
+9. `notifications`: Reads your Atlassian notifications (the bell icon), newest first
+   - Optional parameter: `since` / `until` — an ISO date/time (`2026-10-01`, `2026-10-01T09:00:00Z`) or a duration back from now (`30m`, `24h`, `7d`, `2w`)
+   - Optional parameter: `limit` (number) — default 20, max 100
+   - Optional parameter: `unreadOnly` (boolean), `category` (`direct` or `watching`), `product` (e.g. `jira`, `confluence`)
+   - Optional parameter: `ids` (string array) — return only these notifications (the `ID:` line of each result); the other filters and `limit` are ignored
+   - Optional parameter: `markAsRead` (boolean, default `false`) — marks the returned unread notifications as read, so `ids` + `markAsRead` marks exactly those; grouped notifications are marked as a whole. The API has no way to delete or dismiss a notification.
+   - Notifications come from the Atlassian GraphQL gateway (`/gateway/api/graphql`), which accepts the same API token. The feed is requested for the site in `JIRA_HOST` (its cloud ID is read from the public `/_edge/tenant_info`); without that routing the gateway returns only platform-wide admin notices.
 
 ## Setup
 
@@ -259,6 +272,35 @@ having to fetch the version of empty content.
 
 Pass `"force": true` to skip the check and overwrite regardless.
 
+### Embedding files in descriptions and comments
+
+`add-comment`, `update-comment`, `update-description`, `create-ticket` and `create-sub-ticket` embed
+files referenced with the image syntax of the content format:
+
+```markdown
+![the error dialog](./screenshots/error.png)
+```
+
+```
+!error.png!          (wiki, image)
+[^report.pdf]        (wiki, file)
+```
+
+Each reference resolves to an issue attachment. Jira stores a file shown in a comment as an issue
+attachment, so comments and descriptions work the same way. References resolve in this order:
+
+1. `attachment:<filename or ID>` embeds an attachment already on the ticket.
+2. A local path (relative to the content file, or to the server's working directory for inline text)
+   is uploaded. If the ticket already has an attachment with the same name and size, that attachment
+   is reused, so re-sending an edited file does not attach the same screenshot again.
+3. Otherwise, an attachment already on the ticket with that filename is used.
+
+Every reference is checked before anything is uploaded or written. A single bad reference makes
+the call fail with nothing changed. Web URLs (`https://…`) are left as they are. Images render
+inline, and other files appear as attachment links. When creating a ticket, the description is
+written in a second step after the issue exists, because files can only be attached to an existing
+issue.
+
 ## Development
 
 The server is written in TypeScript and uses:
@@ -275,6 +317,12 @@ Recommended scripts:
 - Run compiled server: `npm start`
 - Format check: `npm run fmt:check`
 - Format write: `npm run fmt`
+- Unit tests: `npm test`
+
+`npm test` runs unit tests only. They use fake Jira clients, need no credentials, and never touch a
+real Jira instance. Checks against a live Jira that create tickets, comments or attachments are run
+by hand as one-off scripts and are not committed. Neither kind of test should commit details of a
+real Jira instance, such as its hostname, project keys, issue keys, people's names or attachment IDs.
 
 Typical workflow:
 

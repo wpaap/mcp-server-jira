@@ -1,13 +1,14 @@
 import { Version3Client } from "jira.js";
 import type { DescriptionFormat, McpResponse } from "../utils.js";
-import { buildADFWithReport, withJiraError, respond, resolveContent, FILE_PATH_HINT } from "../utils.js";
+import { buildADFWithReport, withJiraError, respond, fail, resolveContent, FILE_PATH_HINT, EMBED_HINT } from "../utils.js";
 import { summarizeSmartLinks } from "../shared/smartLinks.js";
+import { planEmbeds, applyEmbeds, embedBaseDir, formatEmbedLines } from "../shared/embedAttachments.js";
 import { checkVersion, contentVersion, fetchContent } from "../shared/contentVersion.js";
 
 export const updateCommentDefinition = {
   name: "update-comment",
   description:
-    "Update an existing comment on a specific ticket. Provide the text inline via `comment`, or point at a local file via `filePath` — the latter makes it easy to iterate on a long comment by editing the file and re-sending.",
+    "Update an existing comment on a specific ticket. Provide the text inline via `comment`, or point at a local file via `filePath` — the latter makes it easy to iterate on a long comment by editing the file and re-sending. " + EMBED_HINT,
   inputSchema: {
     type: "object",
     properties: {
@@ -77,6 +78,10 @@ export async function updateCommentHandler(
     if (conflict) return respond(conflict);
 
     const { adf, smartLinks } = buildADFWithReport(content.text, content.format);
+    const planned = await planEmbeds(jira, issueKey, adf, embedBaseDir(filePath));
+    if ("error" in planned) return fail(planned.error);
+    const embedded = await applyEmbeds(jira, issueKey, planned.plan);
+
     await jira.issueComments.updateComment({
       issueIdOrKey: issueKey,
       id: commentId,
@@ -88,7 +93,8 @@ export async function updateCommentHandler(
     return respond(
       `Successfully updated comment ${commentId} on ${issueKey} from ${content.source} (format: ${content.format}, ${content.text.length} characters)\n` +
       `New version: ${newVersion} — pass this as expectedVersion for the next patch.` +
-      summarizeSmartLinks(smartLinks)
+      summarizeSmartLinks(smartLinks) +
+      formatEmbedLines(embedded)
     );
   }, `Error updating comment ${commentId} on ${issueKey}`);
 }

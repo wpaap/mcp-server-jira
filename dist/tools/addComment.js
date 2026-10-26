@@ -1,8 +1,9 @@
-import { buildADFWithReport, withJiraError, respond, resolveContent, FILE_PATH_HINT } from "../utils.js";
+import { buildADFWithReport, withJiraError, respond, fail, resolveContent, FILE_PATH_HINT, EMBED_HINT } from "../utils.js";
 import { summarizeSmartLinks } from "../shared/smartLinks.js";
+import { planEmbeds, applyEmbeds, embedBaseDir, formatEmbedLines } from "../shared/embedAttachments.js";
 export const addCommentDefinition = {
     name: "add-comment",
-    description: "Add a comment to a specific ticket. Provide the text inline via `comment`, or point at a local file via `filePath` for long content prepared on disk.",
+    description: "Add a comment to a specific ticket. Provide the text inline via `comment`, or point at a local file via `filePath` for long content prepared on disk. " + EMBED_HINT,
     inputSchema: {
         type: "object",
         properties: {
@@ -36,11 +37,16 @@ export async function addCommentHandler(jira, args) {
         if ("error" in content)
             return respond(content.error);
         const { adf, smartLinks } = buildADFWithReport(content.text, content.format);
+        const planned = await planEmbeds(jira, issueKey, adf, embedBaseDir(filePath));
+        if ("error" in planned)
+            return fail(planned.error);
+        const embedded = await applyEmbeds(jira, issueKey, planned.plan);
         const result = await jira.issueComments.addComment({
             issueIdOrKey: issueKey,
             comment: adf,
         });
         return respond(`Successfully added comment to ${issueKey} (comment ID: ${result.id}) from ${content.source} (format: ${content.format}, ${content.text.length} characters)` +
-            summarizeSmartLinks(smartLinks));
+            summarizeSmartLinks(smartLinks) +
+            formatEmbedLines(embedded));
     }, `Error adding comment to ${issueKey}`);
 }
